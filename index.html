@@ -3,52 +3,103 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Home Automation</title>
+  <title>Smart Home Automation - Pro</title>
+  <link href="https://fonts.cdnfonts.com/css/aeonik" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-  <div class="container">
-    <section class="topBar">
-      <div class="top-Bar">
-        <h2 class="auto1">Smart <br/>Home </h2>
-        <h2 class="auto2">Automation</h2>
-      </div>
-        <!-- <p>Control Your Home Smartly</p> -->
-    </section>
-    <section class="hero">
-      <div class="navbar">
-        <div class="connected">
-          <img src="images/image1.png" alt="battery">
-          <p>Connected</p>
-        </div>
-        <div class="mode">
-          <img src="images/image2.png" alt="wifi">
-          <img src="images/image3.png" alt="settings" class="settings">
+  <div class="dashboard-container">
+    <div class="bg-blur blur-top"></div>
+    <div class="bg-blur blur-bottom"></div>
+
+    <div class="content-wrapper">
+      <header class="main-header">
+        <div class="logo-area">
+          <div class="logo-box">
+            <i class="fas fa-power-off"></i>
+          </div>
+          <div class="logo-text">
+            <h1>SMART <span>AUTOMATION</span></h1>
+            <p>Intelligent Living Environment</p>
+          </div>
         </div>
 
-      </div>
+        <div class="header-tools">
+          <div class="time-display">
+            <span id="currentTime">00:00:00</span>
+            <span class="date-label">SYSTEM ACTIVE</span>
+          </div>
+          <div class="tool-divider"></div>
+          <div class="tool-icons">
+            <div class="indicator">
+              <i class="far fa-bell"></i>
+              <span class="dot"></span>
+            </div>
+            <i class="fas fa-cog"></i>
+          </div>
+        </div>
+      </header>
 
-      <div class="hero-1">
-        <div class="grid" id="grid"></div>
-      </div>
 
-      <div class="global-status">
-        <p id="globalStatus" class="status">System is ready</p>
-      </div>
-
-      <div class="summary-box">
-    <h3>Device Summary</h3>
-    <div id="summaryList"></div>
-</div>
+    <div class="main-body">
       
-      <button class="voice" id="voiceBtn">
-        <img src="images/mic.png" alt="microphone" class="mic">
-        <span class="wave"></span>
-      </button>
-    </section>
+      <!-- Connectivity Bar -->
+      <div class="connectivity-bar">
+        <div class="status-indicator">
+          <span class="pulse-dot"></span>
+          <span class="status-label">System Online</span>
+        </div>
+        <div class="sensor-data">
+          <div class="sensor-item">
+            <i class="fas fa-cloud"></i>
+            <span>24°C</span>
+          </div>
+          <div class="sensor-item highlight">
+            <i class="fas fa-wifi"></i>
+            <span id="connLabel">Connected</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Device Grid -->
+      <div class="grid" id="grid">
+      </div>
+
+      <!-- Bottom Layout: Summary & Voice -->
+      <div class="bottom-controls">
+        <div class="summary-card">
+          <div class="summary-content">
+            <p class="section-tag">Device Summary</p>
+            <div class="active-stats">
+              <span id="activeCount" class="stat-num">0</span>
+              <span class="stat-label">Devices Active</span>
+            </div>
+            <div id="summaryList" class="summary-pills">
+              <!-- Pills injected by script.js -->
+            </div>
+            <p id="globalStatus" class="global-msg">System is ready</p>
+          </div>
+        </div>
+
+        <div class="voice-section">
+          <p class="section-tag">Voice Control</p>
+          <button class="voice-btn" id="voiceBtn">
+            <div class="btn-glow"></div>
+            <div class="btn-inner">
+              <i class="fas fa-microphone"></i>
+            </div>
+          </button>
+          <p id="voiceStatus" class="voice-feedback">Ready</p>
+        </div>
+      </div>
+      </div>
+    </div>
   </div>
 
   <script src="script.js"></script>
-  
 </body>
 </html>
