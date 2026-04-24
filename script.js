@@ -1,106 +1,156 @@
 const ESP = "http://192.168.43.120";
-const names = ["Light", "Fan", "TV", "Socket"];
+const devices = [
+    { name: "Light", icon: "fa-lightbulb" },
+    { name: "Fan", icon: "fa-wind" },
+    { name: "TV", icon: "fa-tv" },
+    { name: "Socket", icon: "fa-bolt" }
+];
 let states = [false, false, false, false];
+
 const grid = document.getElementById("grid");
 const voiceBtn = document.getElementById("voiceBtn");
-let lastCommand = "";
-let commandTimer = null;
-let silenceTimer = null;
+const voiceStatus = document.getElementById("voiceStatus");
+const connLabel = document.getElementById("connLabel");
+const statusDot = document.querySelector(".pulse-dot");
 
-names.forEach((name, i) => {
+function updateConnectionStatus() {
+    if (navigator.onLine) {
+        connLabel.innerText = "Connected";
+        connLabel.parentElement.style.color = "#22c55e";
+        statusDot.style.background = "#22c55e";
+        statusDot.style.boxShadow = "0 0 10px #22c55e";
+    } else {
+        connLabel.innerText = "No Connection";
+        connLabel.parentElement.style.color = "#ef4444";
+        statusDot.style.background = "#ef4444";
+        statusDot.style.boxShadow = "0 0 10px #ef4444";
+    }
+}
+
+window.addEventListener('online', updateConnectionStatus);
+window.addEventListener('offline', updateConnectionStatus);
+updateConnectionStatus();
+
+function updateClock() {
+    const now = new Date();
+    document.getElementById("currentTime").innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+devices.forEach((dev, i) => {
     const card = document.createElement("div");
     card.className = "card";
     card.id = "card" + i;
+    card.onclick = () => toggle(i);
 
     card.innerHTML = `
-    <h3>${name}</h3>
-    <p id="status${i}" class="device-status">OFF</p><br>
-    <label class="switch">
-        <input type="checkbox" onchange="toggle(${i})" id="toggle${i}">
-        <span class="slider"></span>
-    </label>
-`;
+        <div class="icon-wrapper">
+            <i class="fas ${dev.icon}"></i>
+        </div>
+        <h3>${dev.name}</h3>
+        <p id="status${i}" class="device-status">OFF</p>
+        <div class="switch-container">
+            <div class="toggle-knob"></div>
+        </div>
+    `;
 
     grid.appendChild(card);
 });
 
 async function toggle(i) {
-    const toggleBtn = document.getElementById("toggle" + i);
-    if (!toggleBtn) return;
-
-    states[i] = toggleBtn.checked;
-
+    states[i] = !states[i];
     updateUI(i);
     updateGlobalStatus(i, states[i]);
 
+    // Send to ESP
     fetch(`${ESP}/relay${i + 1}/${states[i] ? "on" : "off"}`)
-        .catch(() => console.log("Request failed"));
+        .catch(() => console.log("ESP Request failed - device may be offline"));
 
-    speak(`${names[i]} turned ${states[i] ? "on" : "off"}`);
+    speak(`${devices[i].name} turned ${states[i] ? "on" : "off"}`);
 }
 
 function updateUI(i) {
-    const status = document.getElementById("status" + i);
-    const toggleBtn = document.getElementById("toggle" + i);
-
-    toggleBtn.checked = states[i];
+    const statusText = document.getElementById("status" + i);
+    const card = document.getElementById("card" + i);
 
     if (states[i]) {
-        status.innerText = "ON";
+        statusText.innerText = "ON";
+        card.classList.add("active");
     } else {
-        status.innerText = "OFF";
-    }
-
-    const card = document.getElementById("card" + i);
-    if (card) {
-        if (states[i]) {
-            card.classList.add("active");
-        } else {
-            card.classList.remove("active");
-        }
+        statusText.innerText = "OFF";
+        card.classList.remove("active");
     }
 
     updateSummary();
 }
 
-async function syncState() {
-    try {
-        const res = await fetch(`${ESP}/status`);
-        const data = await res.json();
-
-        for (let i = 0; i < 4; i++) {
-            if (document.visibilityState === "visible") {
-                states[i] = data[`relay${i + 1}`] == 1;
-            }
-            updateUI(i);
-        }
-    } catch (e) {
-        console.log("Sync error");
-    }
+function updateSummary() {
+    const container = document.getElementById("summaryList");
+    const countEl = document.getElementById("activeCount");
+    container.innerHTML = "";
+    
+    let activeCount = 0;
+    devices.forEach((dev, i) => {
+        const pill = document.createElement("div");
+        pill.className = `pill ${states[i] ? 'on' : ''}`;
+        pill.innerText = `${dev.name}: ${states[i] ? "ON" : "OFF"}`;
+        container.appendChild(pill);
+        if (states[i]) activeCount++;
+    });
+    
+    countEl.innerText = activeCount;
 }
 
+function updateGlobalStatus(i, state) {
+    const status = document.getElementById("globalStatus");
+    status.innerText = `${devices[i].name} is ${state ? "ON" : "OFF"}`;
+}
+
+function setGlobalMessage(message) {
+    const status = document.getElementById("globalStatus");
+    if (status) status.innerText = message;
+}
+
+let listenTimeout = null;
+
+// Voice Control Logic
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const recognition = new SpeechRecognition();
-recognition.lang = "en-NG";
-recognition.continuous = true;
-
-recognition.onend = () => {
-    if (isListening) {
-        recognition.start();
-    }
-};
-
+let recognition = null;
 let isListening = false;
 
+if (SpeechRecognition) {
+    recognition = new SpeechRecognition();
+    recognition.lang = "en-NG";
+    recognition.continuous = true;
+
+recognition.onresult = (e) => {
+    const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
+
+    processVoice(text);
+
+    resetListenTimer();
+};
+}
+
+function resetListenTimer() {
+    clearTimeout(listenTimeout);
+
+    listenTimeout = setTimeout(() => {
+        stopListening();
+    }, 5000); 
+}
+
 voiceBtn.onclick = () => {
+    if (!recognition) return;
+
     if (!isListening) {
         recognition.start();
         voiceBtn.classList.add("listening");
+        voiceStatus.innerText = "Listening...";
         isListening = true;
 
-        silenceTimer = setTimeout(() => {
-            stopListening();
-        }, 3000);
+        resetListenTimer(); 
     } else {
         stopListening();
     }
@@ -109,137 +159,68 @@ voiceBtn.onclick = () => {
 function stopListening() {
     recognition.stop();
     voiceBtn.classList.remove("listening");
+    voiceStatus.innerText = "Ready";
     isListening = false;
+
+    clearTimeout(listenTimeout);
 }
 
-recognition.onresult = (e) => {
-    clearTimeout(silenceTimer);
-
-    const result = e.results[e.results.length - 1];
-
-    if (!result.isFinal) return;
-
-    const text = result[0].transcript.toLowerCase();
-    console.log("Final Heard:", text);
-
-    processVoice(text);
-
-    silenceTimer = setTimeout(() => {
-        stopListening();
-    }, 5000);
-};
-
 function processVoice(text) {
-    text = text.toLowerCase().trim();
+    let commandDetected = false;
 
-    if (text === lastCommand) return;
-
-    lastCommand = text;
-
-    clearTimeout(commandTimer);
-    commandTimer = setTimeout(() => {
-        lastCommand = "";
-    }, 3000);
-
-    if (text.includes("all off") || text.includes("turn everything off")) {
+    if (text.includes("all off") || text.includes("everything off")) {
         controlAll(false);
-        window.speechSynthesis.cancel();
         speak("Everything turned off");
-        setGlobalMessage("Everything is OFF");
-        return;
+        commandDetected = true;
     }
 
-    if (text.includes("all on") || text.includes("turn everything on")) {
+    if (text.includes("all on") || text.includes("everything on")) {
         controlAll(true);
-        window.speechSynthesis.cancel();
         speak("Everything turned on");
-        setGlobalMessage("Everything is ON");
-        return;
+        commandDetected = true;
     }
 
-    for (let i = 0; i < names.length; i++) {
-        if (text.includes(names[i].toLowerCase())) {
+    devices.forEach((dev, i) => {
+        if (text.includes(dev.name.toLowerCase())) {
             if (text.includes("on")) {
-                voiceControl(i, true, true);
-                return;
+                voiceControl(i, true);
+                commandDetected = true;
             }
-
-            if (text.includes("off")) {
-                voiceControl(i, false, true);
-                return;
+            else if (text.includes("off")) {
+                voiceControl(i, false);
+                commandDetected = true;
             }
         }
-    }
+    });
+
+    if (commandDetected) {
+    stopListening();
+}
 }
 
 function controlAll(state) {
-    for (let i = 0; i < names.length; i++) {
-        voiceControl(i, state, false);
-    }
+    devices.forEach((_, i) => voiceControl(i, state, false));
 }
 
 function voiceControl(i, state, shouldSpeak = true) {
     if (states[i] === state) return;
-
     states[i] = state;
-
-    const toggleBtn = document.getElementById("toggle" + i);
-    if (toggleBtn) toggleBtn.checked = state;
-
     updateUI(i);
 
-    const card = document.getElementById("card" + i);
-    if (card) {
-        card.classList.add("flash");
-        setTimeout(() => card.classList.remove("flash"), 400);
-    }
-
     fetch(`${ESP}/relay${i + 1}/${state ? "on" : "off"}`)
-        .catch(() => console.log("Connection failed"));
+        .catch(() => console.log("Connection to ESP failed"));
 
     if (shouldSpeak) {
-        setGlobalMessage(`${names[i]} is ${state ? "ON" : "OFF"}`);
-        speak(`${names[i]} turned ${state ? "on" : "off"}`);
+        setGlobalMessage(`${devices[i].name} is ${state ? "ON" : "OFF"}`);
+        speak(`${devices[i].name} turned ${state ? "on" : "off"}`);
     }
 }
 
 function speak(message) {
     window.speechSynthesis.cancel();
-
     const speech = new SpeechSynthesisUtterance(message);
-    speech.rate = 1;
-    speech.pitch = 1;
-
     window.speechSynthesis.speak(speech);
 }
 
-function setStatus(i, state) {
-    const status = document.getElementById("status" + i);
-
-    if (status) {
-        status.innerText = `${names[i]} is ${state ? "ON" : "OFF"}`;
-    }
-}
-
-function updateGlobalStatus(i, state) {
-    const status = document.getElementById("globalStatus");
-    status.innerText = `${names[i]} is ${state ? "ON" : "OFF"}`;
-}
-
-function updateSummary() {
-    const container = document.getElementById("summaryList");
-    container.innerHTML = "";
-
-    for (let i = 0; i < names.length; i++) {
-        const item = document.createElement("p");
-        item.innerText = `${names[i]}: ${states[i] ? "ON" : "OFF"}`;
-        container.appendChild(item);
-    }
-}
-
-function setGlobalMessage(message) {
-    const status = document.getElementById("globalStatus");
-    if (status) {
-        status.innerText = message;
-    }
-}
+// Initial Sync
+updateSummary();
