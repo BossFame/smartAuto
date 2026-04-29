@@ -1,226 +1,240 @@
-const ESP = "http://192.168.43.120";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+import {
+  getDatabase,
+  ref,
+  set,
+  onValue
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+// ─── Firebase Config ────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyCznHGmoNftvbixSi9Pme56QdnqAshGmf0",
+  databaseURL: "https://smartauto-fae7c-default-rtdb.firebaseio.com/",
+  authDomain: "smartauto-fae7c.firebaseapp.com",
+  projectId: "smartauto-fae7c",
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+
+// ─── Devices ────────────────────────────────────────
 const devices = [
-    { name: "Light", icon: "fa-lightbulb" },
-    { name: "Fan", icon: "fa-wind" },
-    { name: "TV", icon: "fa-tv" },
-    { name: "Socket", icon: "fa-bolt" }
+  { name: "Light", icon: "fa-lightbulb" },
+  { name: "Fan", icon: "fa-wind" },
+  { name: "TV", icon: "fa-tv" },
+  { name: "Socket", icon: "fa-bolt" }
 ];
+
 let states = [false, false, false, false];
+let isAuthed = false;
+let initialized = false;
 
-const grid = document.getElementById("grid");
-const voiceBtn = document.getElementById("voiceBtn");
-const voiceStatus = document.getElementById("voiceStatus");
-const connLabel = document.getElementById("connLabel");
-const statusDot = document.querySelector(".pulse-dot");
+// ─── START APP AFTER DOM LOAD ───────────────────────
+document.addEventListener("DOMContentLoaded", () => {
 
-function updateConnectionStatus() {
-    if (navigator.onLine) {
-        connLabel.innerText = "Connected";
-        connLabel.parentElement.style.color = "#22c55e";
-        statusDot.style.background = "#22c55e";
-        statusDot.style.boxShadow = "0 0 10px #22c55e";
-    } else {
-        connLabel.innerText = "No Connection";
-        connLabel.parentElement.style.color = "#ef4444";
-        statusDot.style.background = "#ef4444";
-        statusDot.style.boxShadow = "0 0 10px #ef4444";
+  const grid = document.getElementById("grid");
+  const voiceBtn = document.getElementById("voiceBtn");
+  const voiceStatus = document.getElementById("voiceStatus");
+  const connLabel = document.getElementById("connLabel");
+  const statusDot = document.querySelector(".pulse-dot");
+
+  // ─── AUTH ─────────────────────────────────────────
+  signInAnonymously(auth).catch(console.error);
+
+  onAuthStateChanged(auth, (user) => {
+    isAuthed = !!user;
+
+    // ✅ Reset ONLY once (not every refresh)
+    if (isAuthed && !initialized) {
+      initialized = true;
+      for (let i = 1; i <= 4; i++) {
+        set(ref(db, "relay" + i), 0);
+      }
     }
-}
+  });
 
-window.addEventListener('online', updateConnectionStatus);
-window.addEventListener('offline', updateConnectionStatus);
-updateConnectionStatus();
+  // ─── CONNECTION STATUS ────────────────────────────
+  function updateConnectionStatus() {
+    if (!connLabel || !statusDot) return;
 
-function updateClock() {
+    if (navigator.onLine) {
+      connLabel.innerText = "Connected";
+      connLabel.parentElement.style.color = "#22c55e";
+      statusDot.style.background = "#22c55e";
+    } else {
+      connLabel.innerText = "No Connection";
+      connLabel.parentElement.style.color = "#ef4444";
+      statusDot.style.background = "#ef4444";
+    }
+  }
+
+  window.addEventListener("online", updateConnectionStatus);
+  window.addEventListener("offline", updateConnectionStatus);
+  updateConnectionStatus();
+
+  // ─── CLOCK ───────────────────────────────────────
+  setInterval(() => {
     const now = new Date();
-    document.getElementById("currentTime").innerText = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-}
-setInterval(updateClock, 1000);
-updateClock();
+    const el = document.getElementById("currentTime");
+    if (el) {
+      el.innerText = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    }
+  }, 1000);
 
-devices.forEach((dev, i) => {
+  // ─── BUILD UI ────────────────────────────────────
+  devices.forEach((dev, i) => {
     const card = document.createElement("div");
     card.className = "card";
     card.id = "card" + i;
+
     card.onclick = () => toggle(i);
 
     card.innerHTML = `
-        <div class="icon-wrapper">
-            <i class="fas ${dev.icon}"></i>
-        </div>
-        <h3>${dev.name}</h3>
-        <p id="status${i}" class="device-status">OFF</p>
-        <div class="switch-container">
-            <div class="toggle-knob"></div>
-        </div>
+      <div class="icon-wrapper">
+        <i class="fas ${dev.icon}"></i>
+      </div>
+      <h3>${dev.name}</h3>
+      <p id="status${i}" class="device-status">OFF</p>
+      <div class="switch-container">
+        <div class="toggle-knob"></div>
+      </div>
     `;
 
     grid.appendChild(card);
-});
+  });
 
-async function toggle(i) {
+  // ─── REALTIME SYNC ───────────────────────────────
+  for (let i = 1; i <= 4; i++) {
+    onValue(ref(db, "relay" + i), (snap) => {
+      const val = snap.val();
+      if (val !== null) {
+        states[i - 1] = val === 1;
+        updateUI(i - 1);
+      }
+    });
+  }
+
+  // ─── TOGGLE ──────────────────────────────────────
+  async function toggle(i) {
+    if (!isAuthed) return;
+
     states[i] = !states[i];
     updateUI(i);
     updateGlobalStatus(i, states[i]);
 
-    // Send to ESP
-    fetch(`${ESP}/relay${i + 1}/${states[i] ? "on" : "off"}`)
-        .catch(() => console.log("ESP Request failed - device may be offline"));
+    await set(ref(db, "relay" + (i + 1)), states[i] ? 1 : 0);
 
     speak(`${devices[i].name} turned ${states[i] ? "on" : "off"}`);
-}
+  }
 
-function updateUI(i) {
-    const statusText = document.getElementById("status" + i);
-    const card = document.getElementById("card" + i);
+  // ─── VOICE CONTROL ───────────────────────────────
+  function voiceControl(i, state) {
+    if (!isAuthed || states[i] === state) return;
 
-    if (states[i]) {
-        statusText.innerText = "ON";
-        card.classList.add("active");
-    } else {
-        statusText.innerText = "OFF";
-        card.classList.remove("active");
-    }
-
-    updateSummary();
-}
-
-function updateSummary() {
-    const container = document.getElementById("summaryList");
-    const countEl = document.getElementById("activeCount");
-    container.innerHTML = "";
-    
-    let activeCount = 0;
-    devices.forEach((dev, i) => {
-        const pill = document.createElement("div");
-        pill.className = `pill ${states[i] ? 'on' : ''}`;
-        pill.innerText = `${dev.name}: ${states[i] ? "ON" : "OFF"}`;
-        container.appendChild(pill);
-        if (states[i]) activeCount++;
-    });
-    
-    countEl.innerText = activeCount;
-}
-
-function updateGlobalStatus(i, state) {
-    const status = document.getElementById("globalStatus");
-    status.innerText = `${devices[i].name} is ${state ? "ON" : "OFF"}`;
-}
-
-function setGlobalMessage(message) {
-    const status = document.getElementById("globalStatus");
-    if (status) status.innerText = message;
-}
-
-let listenTimeout = null;
-
-// Voice Control Logic
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-let recognition = null;
-let isListening = false;
-
-if (SpeechRecognition) {
-    recognition = new SpeechRecognition();
-    recognition.lang = "en-NG";
-    recognition.continuous = true;
-
-recognition.onresult = (e) => {
-    const text = e.results[e.results.length - 1][0].transcript.toLowerCase();
-
-    processVoice(text);
-
-    resetListenTimer();
-};
-}
-
-function resetListenTimer() {
-    clearTimeout(listenTimeout);
-
-    listenTimeout = setTimeout(() => {
-        stopListening();
-    }, 5000); 
-}
-
-voiceBtn.onclick = () => {
-    if (!recognition) return;
-
-    if (!isListening) {
-        recognition.start();
-        voiceBtn.classList.add("listening");
-        voiceStatus.innerText = "Listening...";
-        isListening = true;
-
-        resetListenTimer(); 
-    } else {
-        stopListening();
-    }
-};
-
-function stopListening() {
-    recognition.stop();
-    voiceBtn.classList.remove("listening");
-    voiceStatus.innerText = "Ready";
-    isListening = false;
-
-    clearTimeout(listenTimeout);
-}
-
-function processVoice(text) {
-    let commandDetected = false;
-
-    if (text.includes("all off") || text.includes("everything off")) {
-        controlAll(false);
-        speak("Everything turned off");
-        commandDetected = true;
-    }
-
-    if (text.includes("all on") || text.includes("everything on")) {
-        controlAll(true);
-        speak("Everything turned on");
-        commandDetected = true;
-    }
-
-    devices.forEach((dev, i) => {
-        if (text.includes(dev.name.toLowerCase())) {
-            if (text.includes("on")) {
-                voiceControl(i, true);
-                commandDetected = true;
-            }
-            else if (text.includes("off")) {
-                voiceControl(i, false);
-                commandDetected = true;
-            }
-        }
-    });
-
-    if (commandDetected) {
-    stopListening();
-}
-}
-
-function controlAll(state) {
-    devices.forEach((_, i) => voiceControl(i, state, false));
-}
-
-function voiceControl(i, state, shouldSpeak = true) {
-    if (states[i] === state) return;
     states[i] = state;
     updateUI(i);
 
-    fetch(`${ESP}/relay${i + 1}/${state ? "on" : "off"}`)
-        .catch(() => console.log("Connection to ESP failed"));
+    set(ref(db, "relay" + (i + 1)), state ? 1 : 0);
 
-    if (shouldSpeak) {
-        setGlobalMessage(`${devices[i].name} is ${state ? "ON" : "OFF"}`);
-        speak(`${devices[i].name} turned ${state ? "on" : "off"}`);
-    }
-}
+    speak(`${devices[i].name} turned ${state ? "on" : "off"}`);
+  }
 
-function speak(message) {
+  function voiceControlAll(state) {
+    if (!isAuthed) return;
+
+    devices.forEach((_, i) => {
+      states[i] = state;
+      updateUI(i);
+      set(ref(db, "relay" + (i + 1)), state ? 1 : 0);
+    });
+
+    speak(`All devices turned ${state ? "on" : "off"}`);
+  }
+
+  // ─── SPEECH ──────────────────────────────────────
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (SpeechRecognition) {
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+
+    voiceBtn.onclick = () => {
+      recognition.start();
+      voiceStatus.innerText = "Listening...";
+      voiceBtn.classList.add("listening");
+    };
+
+    recognition.onresult = (e) => {
+      const cmd = e.results[0][0].transcript.toLowerCase();
+
+      if (cmd.includes("all off")) return voiceControlAll(false);
+      if (cmd.includes("all on")) return voiceControlAll(true);
+
+      devices.forEach((dev, i) => {
+        if (cmd.includes(dev.name.toLowerCase())) {
+          if (cmd.includes("on")) voiceControl(i, true);
+          if (cmd.includes("off")) voiceControl(i, false);
+        }
+      });
+    };
+
+    recognition.onend = () => {
+      voiceBtn.classList.remove("listening");
+      voiceStatus.innerText = "Ready";
+    };
+  }
+
+  // ─── UI ──────────────────────────────────────────
+  function updateUI(i) {
+    const statusText = document.getElementById("status" + i);
+    const card = document.getElementById("card" + i);
+
+    if (!statusText || !card) return;
+
+    statusText.innerText = states[i] ? "ON" : "OFF";
+    card.classList.toggle("active", states[i]);
+
+    updateSummary();
+  }
+
+  function updateSummary() {
+    const container = document.getElementById("summaryList");
+    const countEl = document.getElementById("activeCount");
+
+    container.innerHTML = "";
+    let count = 0;
+
+    devices.forEach((dev, i) => {
+      const pill = document.createElement("div");
+      pill.className = `pill ${states[i] ? "on" : ""}`;
+      pill.innerText = `${dev.name}: ${states[i] ? "ON" : "OFF"}`;
+      container.appendChild(pill);
+      if (states[i]) count++;
+    });
+
+    countEl.innerText = count;
+  }
+
+  function updateGlobalStatus(i, state) {
+    const el = document.getElementById("globalStatus");
+    if (el) el.innerText = `${devices[i].name} is ${state ? "ON" : "OFF"}`;
+  }
+
+  function speak(msg) {
     window.speechSynthesis.cancel();
-    const speech = new SpeechSynthesisUtterance(message);
+    const speech = new SpeechSynthesisUtterance(msg);
     window.speechSynthesis.speak(speech);
-}
+  }
 
-// Initial Sync
-updateSummary();
+  updateSummary();
+});
