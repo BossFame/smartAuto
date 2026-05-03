@@ -11,7 +11,6 @@ import {
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
-// ─── Firebase Config ────────────────────────────────
 const firebaseConfig = {
   apiKey: "AIzaSyCznHGmoNftvbixSi9Pme56QdnqAshGmf0",
   databaseURL: "https://smartauto-fae7c-default-rtdb.firebaseio.com/",
@@ -23,7 +22,6 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const auth = getAuth(app);
 
-// ─── Devices ────────────────────────────────────────
 const devices = [
   { name: "Light", icon: "fa-lightbulb" },
   { name: "Fan", icon: "fa-wind" },
