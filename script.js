@@ -48,7 +48,6 @@ document.addEventListener("DOMContentLoaded", () => {
   onAuthStateChanged(auth, (user) => {
     isAuthed = !!user;
 
-    // ✅ Reset ONLY once (not every refresh)
     if (isAuthed && !initialized) {
       initialized = true;
       for (let i = 1; i <= 4; i++) {
@@ -65,7 +64,8 @@ document.addEventListener("DOMContentLoaded", () => {
       connLabel.innerText = "Connected";
       connLabel.parentElement.style.color = "#22c55e";
       statusDot.style.background = "#22c55e";
-    } else {8
+    } else {
+      // ✅ FIXED: removed stray `8` that caused syntax error
       connLabel.innerText = "No Connection";
       connLabel.parentElement.style.color = "#ef4444";
       statusDot.style.background = "#ef4444";
@@ -137,10 +137,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // ─── VOICE CONTROL ───────────────────────────────
   function voiceControl(i, state) {
-    if (!isAuthed || states[i] === state) return;
+    if (!isAuthed) return;
+    // ✅ FIXED: removed `states[i] === state` guard so re-issuing same command still works
 
     states[i] = state;
     updateUI(i);
+    updateGlobalStatus(i, state);
 
     set(ref(db, "relay" + (i + 1)), state ? 1 : 0);
 
@@ -156,6 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
       set(ref(db, "relay" + (i + 1)), state ? 1 : 0);
     });
 
+    updateGlobalStatus(null, state); // ✅ Update global status for "all"
     speak(`All devices turned ${state ? "on" : "off"}`);
   }
 
@@ -165,36 +168,91 @@ document.addEventListener("DOMContentLoaded", () => {
   if (SpeechRecognition) {
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
 
     voiceBtn.onclick = () => {
-      recognition.start();
-      voiceStatus.innerText = "Listening...";
-      voiceBtn.classList.add("listening");
+      try {
+        recognition.start();
+        voiceStatus.innerText = "Listening...";
+        voiceBtn.classList.add("listening");
+      } catch (e) {
+        console.warn("Recognition already started:", e);
+      }
     };
 
-recognition.onresult = (e) => {
-  const cmd = e.results[0][0].transcript.toLowerCase();
-  console.log("Heard:", cmd); // 👈 Add this to debug what's being heard
+    recognition.onresult = (e) => {
+      const cmd = e.results[0][0].transcript.toLowerCase().trim();
+      console.log("Heard:", cmd);
 
-  // Check longer/more specific phrase first
-  if (cmd.includes("all on") || cmd.includes("everything on") || cmd.includes("all devices on")) {
-    return voiceControlAll(true);
-  }
-  if (cmd.includes("all off") || cmd.includes("everything off") || cmd.includes("all devices off")) {
-    return voiceControlAll(false);
-  }
+      // ✅ FIXED: Expanded "all on/off" detection to cover more natural phrasings
+      const isAllOn =
+        cmd.includes("all on") ||
+        cmd.includes("everything on") ||
+        cmd.includes("all devices on") ||
+        cmd.includes("turn on all") ||
+        cmd.includes("turn all on") ||
+        cmd.includes("switch on all") ||
+        cmd.includes("switch all on") ||
+        (cmd.includes("all") && cmd.includes("on") && !cmd.includes("off"));
 
-  devices.forEach((dev, i) => {
-    if (cmd.includes(dev.name.toLowerCase())) {
-      if (cmd.includes("on")) voiceControl(i, true);
-      if (cmd.includes("off")) voiceControl(i, false);
-    }
-  });
-};
+      const isAllOff =
+        cmd.includes("all off") ||
+        cmd.includes("everything off") ||
+        cmd.includes("all devices off") ||
+        cmd.includes("turn off all") ||
+        cmd.includes("turn all off") ||
+        cmd.includes("switch off all") ||
+        cmd.includes("switch all off") ||
+        (cmd.includes("all") && cmd.includes("off") && !cmd.includes("on"));
+
+      if (isAllOn) {
+        voiceStatus.innerText = `Command: "${cmd}"`;
+        return voiceControlAll(true);
+      }
+
+      if (isAllOff) {
+        voiceStatus.innerText = `Command: "${cmd}"`;
+        return voiceControlAll(false);
+      }
+
+      // ✅ Individual device commands
+      let matched = false;
+      devices.forEach((dev, i) => {
+        if (cmd.includes(dev.name.toLowerCase())) {
+          if (cmd.includes("on") && !cmd.includes("off")) {
+            voiceControl(i, true);
+            matched = true;
+          } else if (cmd.includes("off") && !cmd.includes("on")) {
+            voiceControl(i, false);
+            matched = true;
+          }
+        }
+      });
+
+      voiceStatus.innerText = matched ? `Command: "${cmd}"` : `Not understood: "${cmd}"`;
+    };
+
+    recognition.onerror = (e) => {
+      console.error("Speech error:", e.error);
+      voiceStatus.innerText = `Error: ${e.error}`;
+      voiceBtn.classList.remove("listening");
+    };
+
     recognition.onend = () => {
       voiceBtn.classList.remove("listening");
-      voiceStatus.innerText = "Ready";
+      if (voiceStatus.innerText === "Listening...") {
+        voiceStatus.innerText = "Ready";
+      }
     };
+
+  } else {
+    // ✅ Graceful fallback if browser doesn't support speech
+    if (voiceBtn) {
+      voiceBtn.disabled = true;
+      voiceBtn.title = "Speech recognition not supported in this browser";
+    }
+    if (voiceStatus) voiceStatus.innerText = "Voice not supported";
   }
 
   // ─── UI ──────────────────────────────────────────
@@ -214,6 +272,8 @@ recognition.onresult = (e) => {
     const container = document.getElementById("summaryList");
     const countEl = document.getElementById("activeCount");
 
+    if (!container || !countEl) return;
+
     container.innerHTML = "";
     let count = 0;
 
@@ -230,7 +290,11 @@ recognition.onresult = (e) => {
 
   function updateGlobalStatus(i, state) {
     const el = document.getElementById("globalStatus");
-    if (el) el.innerText = `${devices[i].name} is ${state ? "ON" : "OFF"}`;
+    if (!el) return;
+    // ✅ FIXED: Handle "all devices" case (i === null)
+    el.innerText = i !== null
+      ? `${devices[i].name} is ${state ? "ON" : "OFF"}`
+      : `All devices turned ${state ? "ON" : "OFF"}`;
   }
 
   function speak(msg) {
