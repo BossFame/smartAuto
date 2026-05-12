@@ -65,7 +65,7 @@ document.addEventListener("DOMContentLoaded", () => {
       connLabel.innerText = "Connected";
       connLabel.parentElement.style.color = "#22c55e";
       statusDot.style.background = "#22c55e";
-    } else {
+    } else {8
       connLabel.innerText = "No Connection";
       connLabel.parentElement.style.color = "#ef4444";
       statusDot.style.background = "#ef4444";
@@ -172,20 +172,25 @@ document.addEventListener("DOMContentLoaded", () => {
       voiceBtn.classList.add("listening");
     };
 
-    recognition.onresult = (e) => {
-      const cmd = e.results[0][0].transcript.toLowerCase();
+recognition.onresult = (e) => {
+  const cmd = e.results[0][0].transcript.toLowerCase();
+  console.log("Heard:", cmd); // 👈 Add this to debug what's being heard
 
-      if (cmd.includes("all off")) return voiceControlAll(false);
-      if (cmd.includes("all on")) return voiceControlAll(true);
+  // Check longer/more specific phrase first
+  if (cmd.includes("all on") || cmd.includes("everything on") || cmd.includes("all devices on")) {
+    return voiceControlAll(true);
+  }
+  if (cmd.includes("all off") || cmd.includes("everything off") || cmd.includes("all devices off")) {
+    return voiceControlAll(false);
+  }
 
-      devices.forEach((dev, i) => {
-        if (cmd.includes(dev.name.toLowerCase())) {
-          if (cmd.includes("on")) voiceControl(i, true);
-          if (cmd.includes("off")) voiceControl(i, false);
-        }
-      });
-    };
-
+  devices.forEach((dev, i) => {
+    if (cmd.includes(dev.name.toLowerCase())) {
+      if (cmd.includes("on")) voiceControl(i, true);
+      if (cmd.includes("off")) voiceControl(i, false);
+    }
+  });
+};
     recognition.onend = () => {
       voiceBtn.classList.remove("listening");
       voiceStatus.innerText = "Ready";
