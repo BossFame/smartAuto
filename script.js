@@ -48,12 +48,10 @@ document.addEventListener("DOMContentLoaded", () => {
   onAuthStateChanged(auth, (user) => {
     isAuthed = !!user;
 
-    if (isAuthed && !initialized) {
-      initialized = true;
-      for (let i = 1; i <= 4; i++) {
-        set(ref(db, "relay" + i), 0);
-      }
-    }
+    if (isAuthed && !initialized) if (isAuthed && !initialized) {
+  initialized = true;
+  console.log("Authenticated");
+}
   });
 
   // ─── CONNECTION STATUS ────────────────────────────
